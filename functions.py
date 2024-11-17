@@ -248,8 +248,8 @@ def perform_linear_regression(validated_pairs_list, start_date, end_date, plot=F
 
 def calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date):
     """
-    Calculates and plots the spreads for each pair from the CSV file over the specified date range.
-    Includes mean and standard deviation lines on the plot.
+    Calculates and plots the Z-score of the spreads for each pair from the CSV file over the specified date range.
+    Includes threshold lines at +1σ and ±2σ and counts the frequency of crossings.
 
     Parameters:
     - csv_file: Path to the CSV file containing 'Ticker 1', 'Ticker 2', and 'Slope (b)' columns.
@@ -257,14 +257,18 @@ def calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date):
     - end_date: End date for fetching historical prices (format 'YYYY-MM-DD').
 
     Returns:
-    - spreads_dict: A dictionary where keys are ticker pairs and values are DataFrames containing spreads.
+    - spreads_analysis_dict: A dictionary where keys are ticker pairs and values are dictionaries containing spread DataFrame and crossing counts.
     """
+    import pandas as pd
+    import yfinance as yf
+    import matplotlib.pyplot as plt
+    from statsmodels.tsa.stattools import adfuller
 
     # Read the CSV file into a DataFrame
     pairs_df = pd.read_csv(csv_file)
 
-    # Initialize a dictionary to store spreads for each pair
-    spreads_dict = {}
+    # Initialize a dictionary to store analysis results for each pair
+    spreads_analysis_dict = {}
 
     # Iterate over each pair in the DataFrame
     for index, row in pairs_df.iterrows():
@@ -287,41 +291,76 @@ def calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date):
             spread_mean = combined_data['Spread'].mean()
             spread_std = combined_data['Spread'].std()
 
-            # Store the DataFrame in the dictionary
-            spreads_dict[(ticker1, ticker2)] = combined_data
+            # Calculate the Z-score of the spread
+            combined_data['Z-score'] = (combined_data['Spread'] - spread_mean) / spread_std
 
-            # Plot the spread
+            # Identify threshold crossings
+            z_scores = combined_data['Z-score']
+
+            # Crossings of +1σ and +2σ
+            crossings_plus_1 = ((z_scores.shift(1) < 1) & (z_scores >= 1)).sum()
+            crossings_plus_2 = ((z_scores.shift(1) < 2) & (z_scores >= 2)).sum()
+
+            # Crossings of -1σ and -2σ
+            crossings_minus_1 = ((z_scores.shift(1) > -1) & (z_scores <= -1)).sum()
+            crossings_minus_2 = ((z_scores.shift(1) > -2) & (z_scores <= -2)).sum()
+
+            # Total crossings
+            total_crossings = crossings_plus_1 + crossings_plus_2 + crossings_minus_1 + crossings_minus_2
+
+            # Evaluate the pair based on crossings (you can define your own criteria)
+            if total_crossings >= 10:
+                evaluation = 'Good for trading'
+            elif total_crossings >= 5:
+                evaluation = 'Average for trading'
+            else:
+                evaluation = 'Not ideal for trading'
+
+            # Store the analysis results
+            analysis_results = {
+                'Data': combined_data,
+                'Crossings +1σ': crossings_plus_1,
+                'Crossings +2σ': crossings_plus_2,
+                'Crossings -1σ': crossings_minus_1,
+                'Crossings -2σ': crossings_minus_2,
+                'Total Crossings': total_crossings,
+                'Evaluation': evaluation
+            }
+            spreads_analysis_dict[(ticker1, ticker2)] = analysis_results
+
+            # Plot the Z-score
             plt.figure(figsize=(12, 6))
-            combined_data['Spread'].plot(title=f"Spread: {ticker1} - {b:.4f} * {ticker2}")
+            combined_data['Z-score'].plot(title=f"Z-score of Spread: {ticker1} - {b:.4f} * {ticker2}")
             plt.xlabel('Date')
-            plt.ylabel('Spread Value')
+            plt.ylabel('Z-score')
             plt.grid(True)
 
-            # Add horizontal lines for mean and standard deviations
-            plt.axhline(spread_mean, color='red', linestyle='--', label='Mean')
-            plt.axhline(spread_mean + spread_std, color='green', linestyle='--', label='Mean + 1 Std Dev')
-            plt.axhline(spread_mean - spread_std, color='green', linestyle='--', label='Mean - 1 Std Dev')
-
-            # Optionally, add lines for 2 standard deviations
-            plt.axhline(spread_mean + 2 * spread_std, color='orange', linestyle='--', label='Mean + 2 Std Dev')
-            plt.axhline(spread_mean - 2 * spread_std, color='orange', linestyle='--', label='Mean - 2 Std Dev')
+            # Add horizontal lines for thresholds
+            plt.axhline(0, color='black', linestyle='--', label='Mean (Z=0)')
+            plt.axhline(1, color='green', linestyle='--', label='+1σ Threshold')
+            plt.axhline(-1, color='green', linestyle='--', label='-1σ Threshold')
+            plt.axhline(2, color='red', linestyle='--', label='+2σ Threshold')
+            plt.axhline(-2, color='red', linestyle='--', label='-2σ Threshold')
 
             plt.legend()
 
-            # Annotate the plot with mean and std values
-            plt.text(0.02, 0.95, f'Mean: {spread_mean:.2f}\nStd Dev: {spread_std:.2f}',
+            # Annotate the plot with crossing counts and evaluation
+            plt.text(0.02, 0.95, f'Crossings +1σ: {crossings_plus_1}\nCrossings +2σ: {crossings_plus_2}\n'
+                                  f'Crossings -1σ: {crossings_minus_1}\nCrossings -2σ: {crossings_minus_2}\n'
+                                  f'Total Crossings: {total_crossings}\nEvaluation: {evaluation}',
                      transform=plt.gca().transAxes, verticalalignment='top')
 
             # Save the plot to a file
-            plot_filename = f"spread_plot_{ticker1}_{ticker2}.png"
+            plot_filename = f"zscore_plot_{ticker1}_{ticker2}.png"
             plt.savefig(plot_filename)
-            print(f"Saved spread plot for {ticker1} and {ticker2} to {plot_filename}")
+            print(f"Saved Z-score plot for {ticker1} and {ticker2} to {plot_filename}")
 
             plt.show()
-            plt.clf()
+            plt.clf()  # Clear the figure
 
         except Exception as e:
             print(f"Error calculating spread for pair {ticker1}, {ticker2}: {e}")
 
-    return spreads_dict
+    return spreads_analysis_dict
+
 
