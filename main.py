@@ -56,4 +56,31 @@ start_date = "2022-11-16"
 end_date = "2024-11-16"
 
 # Calculate and plot spreads, plots will be saved by the function
-spreads_dict = f.calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date)
+spreads_analysis_dict = f.calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date)
+
+# Compile and save the crossings count and evaluation for each pair
+analysis_results_list = []
+for pair, analysis in spreads_analysis_dict.items():
+    ticker1, ticker2 = pair
+    crossings_plus_1 = analysis['Crossings +1σ']
+    crossings_plus_2 = analysis['Crossings +2σ']
+    crossings_minus_1 = analysis['Crossings -1σ']
+    crossings_minus_2 = analysis['Crossings -2σ']
+    total_crossings = analysis['Total Crossings']
+    evaluation = analysis['Evaluation']
+
+    analysis_results_list.append({
+        'Ticker 1': ticker1,
+        'Ticker 2': ticker2,
+        'Crossings +1σ': crossings_plus_1,
+        'Crossings +2σ': crossings_plus_2,
+        'Crossings -1σ': crossings_minus_1,
+        'Crossings -2σ': crossings_minus_2,
+        'Total Crossings': total_crossings,
+        'Evaluation': evaluation
+    })
+
+# Save the analysis results to a CSV file
+analysis_results_df = pd.DataFrame(analysis_results_list)
+analysis_results_df.to_csv('spread_analysis_results.csv', index=False)
+print("Spread analysis results have been saved to 'spread_analysis_results.csv'")
