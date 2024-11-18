@@ -19,11 +19,12 @@ portfolio_value = invest_per_pair * n + portion_for_transactions
 
 
 final_value = 0
+total_transaction_costs = 0
 
 for i in range(len(regression_results)):
     test_pair = regression_results.iloc[i]
 
-    pair_value = f.pair_trading_strategy_from_regression(
+    pair_value, transaction_costs = f.pair_trading_strategy_with_costs(
             test_pair=test_pair,
             invest_per_pair=invest_per_pair,
             start_date=start_date,
@@ -31,5 +32,11 @@ for i in range(len(regression_results)):
         )
 
     final_value += pair_value
-    print(f"Pair final value: {pair_value}")
-print(f"\nTotal Final Portfolio Value Across All Pairs: {final_value:.2f}")
+    total_transaction_costs += transaction_costs
+    print(f"Pair final value: ${pair_value}")
+print(f"\nTotal Final Portfolio Value Across All Pairs: ${final_value:.2f}")
+print(f"Total Transaction Costs Across All Pairs: ${total_transaction_costs:.2f}")
+
+final_value += total_transaction_costs
+print(f"Portfolio value after costs: ${final_value:.2f}")
+
