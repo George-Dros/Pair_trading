@@ -362,3 +362,125 @@ def calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date):
     return spreads_analysis_dict
 
 
+def pair_trading_strategy_from_regression(test_pair, invest_per_pair, start_date, end_date):
+    """
+    Executes a pair trading strategy for the given pair of stocks extracted from regression results.
+
+    Args:
+        test_pair (pd.Series): Row of the regression results DataFrame containing the pair information.
+        invest_per_pair (float): Initial investment for the pair.
+        start_date (str): Start date for the trading period (YYYY-MM-DD).
+        end_date (str): End date for the trading period (YYYY-MM-DD).
+
+    Returns:
+        float: Final portfolio value for the pair after liquidation.
+    """
+    # Extract ticker symbols and hedge ratio from the test pair
+    ticker_1 = test_pair["Ticker 1"]
+    ticker_2 = test_pair["Ticker 2"]
+    b = test_pair["Slope (b)"]
+
+    print(f"\nRunning Pair Trading Strategy for: {ticker_1}-{ticker_2} (Hedge Ratio: {b:.2f})")
+
+    # Fetch historical data
+    ticker_1_data = yf.Ticker(ticker_1).history(start=start_date, end=end_date)["Close"]
+    ticker_2_data = yf.Ticker(ticker_2).history(start=start_date, end=end_date)["Close"]
+
+    # Combine data into a DataFrame
+    pair_data = pd.concat([ticker_1_data, ticker_2_data], axis=1, keys=[ticker_1, ticker_2]).dropna()
+    pair_data["Spreads"] = pair_data[ticker_1] - b * pair_data[ticker_2]
+
+    # Calculate Z-Scores
+    spread_mean = pair_data["Spreads"].mean()
+    spread_std = pair_data["Spreads"].std()
+    pair_data["Z_Scores"] = (pair_data["Spreads"] - spread_mean) / spread_std
+
+    # Initialize variables
+    prev_row = None
+    prev_position = None
+    shares_a = 0
+    shares_b = 0
+    cash = invest_per_pair
+
+    # Perform pair trading
+    for row in pair_data.itertuples():
+        price_a = getattr(row, ticker_1)
+        price_b = getattr(row, ticker_2)
+
+        # Calculate portfolio value
+        portfolio_value = cash + (shares_a * price_a) + (shares_b * price_b)
+        print(f"Date: {row.Index.date()}, Total Portfolio Value: {portfolio_value:.2f}")
+
+        if prev_row is not None:
+            # Buy signal (enter long position)
+            if (row.Z_Scores < -2) and (prev_row.Z_Scores >= -2) and prev_position != "long":
+                print(f"Buy on {row.Index.date()}, Z-Score dropped below -2 to: {row.Z_Scores:.2f}")
+                prev_position = 'long'
+
+                # Calculate shares
+                shares_a = cash / price_a
+                shares_b = - b * shares_a
+
+                # Update cash
+                cash -= shares_a * price_a
+                cash += - shares_b * price_b
+
+                print(f"Shares A (Long): {shares_a}, Shares B (Short): {shares_b}, Cash: {cash:.2f}")
+
+            # Sell signal (enter short position)
+            elif (row.Z_Scores > 2) and (prev_row.Z_Scores <= 2) and prev_position != "short":
+                print(f"Sell on {row.Index.date()}, Z-Score increased above 2 to: {row.Z_Scores:.2f}")
+                prev_position = 'short'
+
+                # Corrected cashflow and share calculations
+                shares_a = - (cash / price_a)  # Short position in Stock A
+                shares_b = - (shares_a / b)  # Long position in Stock B, adjusted by hedge ratio
+
+                # Update cash
+                cash += - shares_a * price_a  # Proceeds from shorting Stock A
+                cash -= shares_b * price_b  # Cost of buying Stock B
+
+                print(f"Shares A (Short): {shares_a}, Shares B (Long): {shares_b}, Cash: {cash:.2f}")
+
+            # Exit long position
+            elif prev_position == 'long' and (row.Z_Scores > -1) and (row.Z_Scores < 0) and (prev_row.Z_Scores <= -1):
+                print(f"Exit long position on {row.Index.date()}, Z-Score is: {row.Z_Scores:.2f}")
+                cash += shares_a * price_a
+                cash -= - shares_b * price_b
+                shares_a = 0
+                shares_b = 0
+                prev_position = None
+                print(f"Exited Long Position. Cash: {cash:.2f}")
+
+            # Exit short position
+            elif prev_position == 'short' and (row.Z_Scores < 1) and (row.Z_Scores > 0) and (prev_row.Z_Scores >= 1):
+                print(f"Exit short position on {row.Index.date()}, Z-Score is: {row.Z_Scores:.2f}")
+                cash -= - shares_a * price_a
+                cash += shares_b * price_b
+                shares_a = 0
+                shares_b = 0
+                prev_position = None
+                print(f"Exited Short Position. Cash: {cash:.2f}")
+
+        prev_row = row
+
+    # Final cash out
+    if shares_a != 0 or shares_b != 0:
+        if shares_a > 0:
+            cash += shares_a * price_a
+            print(f"Sold all shares of {ticker_1}: {shares_a} at {price_a:.2f} each. Proceeds: {shares_a * price_a:.2f}")
+        if shares_b > 0:
+            cash += shares_b * price_b
+            print(f"Sold all shares of {ticker_2}: {shares_b} at {price_b:.2f} each. Proceeds: {shares_b * price_b:.2f}")
+        if shares_a < 0:
+            cash -= -shares_a * price_a
+            print(f"Covered all short shares of {ticker_1}: {-shares_a} at {price_a:.2f} each. Cost: {-shares_a * price_a:.2f}")
+        if shares_b < 0:
+            cash -= -shares_b * price_b
+            print(f"Covered all short shares of {ticker_2}: {-shares_b} at {price_b:.2f} each. Cost: {-shares_b * price_b:.2f}")
+        shares_a = 0
+        shares_b = 0
+
+    print(f"Final Portfolio Value for {ticker_1}-{ticker_2}: {cash:.2f}")
+    return cash
+
