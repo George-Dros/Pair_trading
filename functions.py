@@ -259,9 +259,7 @@ def calculate_and_plot_spreads_from_csv(csv_file, start_date, end_date):
     Returns:
     - spreads_analysis_dict: A dictionary where keys are ticker pairs and values are dictionaries containing spread DataFrame and crossing counts.
     """
-    import pandas as pd
-    import yfinance as yf
-    import matplotlib.pyplot as plt
+
     from statsmodels.tsa.stattools import adfuller
 
     # Read the CSV file into a DataFrame
