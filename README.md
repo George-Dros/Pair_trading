@@ -80,11 +80,11 @@ Notable Metrics:
 
 - Python 3.8+
 - Libraries:
-```
-    pandas
-    numpy
-    matplotlib
-    seaborn
-    statsmodels
-    yfinance
-```
+
+    ```pandas```
+    ```numpy```
+   ```matplotlib```
+    ```seaborn```
+    ```statsmodels```
+    ```yfinance```
+
